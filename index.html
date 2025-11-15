@@ -1,0 +1,1306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HomeWorkoutFactory — Local (Final, Notes + Loader)</title>
+
+  <!-- Tailwind for quick layout -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- PDF libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background: #f7fafc; color: #0f172a; }
+    .tab-button.active { border-bottom: 3px solid #10b981; color: #10b981; font-weight: 600; }
+    .meal-pill { font-size: 11px; padding: 2px 6px; border-radius: 999px; background:#ecfdf5; color:#065f46; display:inline-flex; align-items:center; gap:6px; }
+    .session-pill { font-size: 11px; padding: 2px 6px; border-radius: 6px; background:#faf5ff; color:#5b21b6; display:inline-flex; align-items:center; gap:6px; }
+    .border-frame { border: 2px solid #e5e7eb; border-radius: 10px; padding: 20px; background: #fff; box-sizing: border-box; }
+    .hidden { display:none; }
+    .feedback { position: fixed; top: 16px; right: 16px; z-index: 60; padding: 12px 16px; border-radius: 8px; color: #fff; display:none; }
+    .thumb { width:64px; height:64px; object-fit:cover; border-radius:8px; }
+    .pdf-card { border-radius:10px; box-shadow: 0 4px 20px rgba(2,6,23,0.06); }
+    .small-muted { color:#6b7280; font-size:12px; }
+    .file-btn { display:inline-flex; gap:8px; align-items:center; padding:6px 10px; border-radius:8px; background:#f3f4f6; cursor:pointer; border:1px solid #e5e7eb; }
+    .circle-img { width:96px; height:96px; border-radius:9999px; object-fit:cover; border:3px solid white; box-shadow:0 6px 18px rgba(2,6,23,0.08); background:#fff; }
+    /* Loader modal */
+    #pdf-loader { position:fixed; inset:0; background:rgba(15,23,42,0.6); display:flex; align-items:center; justify-content:center; z-index:1000; display:none; }
+    #pdf-loader .card { background:#fff; padding:28px; border-radius:12px; width:420px; max-width:90%; box-shadow:0 10px 40px rgba(2,6,23,0.3); text-align:center; }
+    .spinner { border:6px solid #f3f4f6; border-top:6px solid #6366f1; border-radius:50%; width:56px; height:56px; animation:spin 1s linear infinite; margin:0 auto 16px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .progress-outer { height:10px; background:#eef2f7; border-radius:999px; overflow:hidden; margin-top:12px; }
+    .progress-inner { height:100%; width:0%; background:#10b981; transition:width 400ms ease; }
+    /* A4 preview sizes (for HTML elements used for html2canvas) kept at previously used sizes */
+  </style>
+</head>
+<body>
+  <div id="app" class="max-w-6xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-2xl font-bold">HomeWorkoutFactory — Local Mode (Final)</h1>
+      <p class="text-sm text-gray-600">Local-only — autosave to <code>localStorage</code>. No backend required.</p>
+    </header>
+
+    <!-- Tabs -->
+    <div class="flex border-b border-gray-200 mb-6">
+      <button class="tab-button active p-3 text-sm flex-1 text-center transition" data-view="home">Home</button>
+      <button class="tab-button p-3 text-sm flex-1 text-center transition" data-view="recipes">Recipes</button>
+      <button class="tab-button p-3 text-sm flex-1 text-center transition" data-view="workouts">Workouts</button>
+    </div>
+
+    <!-- Home view -->
+    <div id="home-view" class="view">
+      <div class="bg-white p-6 rounded-xl shadow mb-6 border-frame pdf-card">
+        <h2 class="text-xl font-semibold mb-3">Client Profile & Calculations</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class="md:col-span-2">
+            <input id="client-name" placeholder="Client Name" class="w-full p-3 border rounded-lg mb-3" />
+            <div class="grid grid-cols-2 gap-3">
+              <select id="gender" class="p-3 border rounded-lg">
+                <option value="">Gender</option><option value="male">Male</option><option value="female">Female</option>
+              </select>
+              <input id="age" type="number" placeholder="Age" class="p-3 border rounded-lg" min="15" />
+            </div>
+            <div class="grid grid-cols-3 gap-3 mt-3">
+              <input id="weight" type="number" placeholder="Current Weight (kg)" class="p-3 border rounded-lg" min="20" />
+              <input id="starting-weight" type="number" placeholder="Starting Weight (kg)" class="p-3 border rounded-lg" min="20" />
+              <input id="height" type="number" placeholder="Height (cm)" class="p-3 border rounded-lg" min="100" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mt-3">
+              <select id="activity-level" class="p-3 border rounded-lg">
+                <option value="">Activity Level</option>
+                <option value="1.2">Sedentary</option>
+                <option value="1.375">Lightly Active</option>
+                <option value="1.55">Moderately Active</option>
+                <option value="1.725">Very Active</option>
+                <option value="1.9">Extra Active</option>
+              </select>
+
+              <input id="start-date" type="date" class="p-3 border rounded-lg" />
+            </div>
+
+            <div class="mt-3">
+              <label class="text-xs text-gray-500">Upload Profile Image</label>
+              <div class="flex items-center gap-3 mt-2">
+                <label class="file-btn">
+                  <span>Choose Image</span>
+                  <input id="profile-image-input" type="file" accept="image/*" />
+                </label>
+                <div id="profile-preview-wrap" style="display:flex; align-items:center;">
+                  <img id="profile-preview" class="circle-img" src="" alt="Profile" style="display:none" />
+                </div>
+              </div>
+              <p class="text-xs text-gray-500 mt-2">This image will replace the logo area on the PDF cover (circular).</p>
+            </div>
+
+            <div class="mt-3">
+              <label class="text-xs text-gray-500">Upload Front Cover (A4)</label>
+              <div class="flex items-center gap-3 mt-2">
+                <label class="file-btn">
+                  <span>Choose Cover</span>
+                  <input id="front-cover-input" type="file" accept="image/*" />
+                </label>
+                <div id="front-cover-preview-wrap" style="display:flex; align-items:center;">
+                  <img id="front-cover-preview" style="width:120px; height:80px; object-fit:cover; border-radius:6px; display:none" alt="Cover preview" />
+                </div>
+              </div>
+              <p class="text-xs text-gray-500 mt-2">Optional: a full-page cover image (will be inserted before profile page). A small border is applied in the PDF.</p>
+            </div>
+
+            <!-- NOTES field (user asked: placed directly below cover upload) -->
+            <div class="mt-3">
+              <label class="text-xs text-gray-500">Notes</label>
+              <textarea id="client-notes" rows="6" placeholder="Add notes here (will appear on the PDF profile page)" class="w-full p-3 border rounded-lg mt-2"></textarea>
+              <p class="text-xs text-gray-500 mt-2">Notes will be included on the profile page of the exported PDF.</p>
+            </div>
+
+          </div>
+
+          <div class="md:col-span-2">
+            <div class="p-4 border rounded-lg bg-gray-50">
+              <label class="text-xs text-gray-500 block mb-2">Calculated TDEE (kcal)</label>
+              <p id="display-tdee" class="font-bold text-lg text-emerald-600">0</p>
+              <input id="tdee" type="hidden" />
+            </div>
+
+            <div class="p-4 border rounded-lg bg-white mt-3">
+              <label class="text-xs text-gray-500 block mb-2">Macro Split (P/C/F %)</label>
+              <div class="grid grid-cols-3 gap-2">
+                <input id="macro-protein" type="number" min="0" max="100" placeholder="P %" class="p-2 border rounded text-center" />
+                <input id="macro-carb" type="number" min="0" max="100" placeholder="C %" class="p-2 border rounded text-center" />
+                <input id="macro-fat" type="number" min="0" max="100" placeholder="F %" class="p-2 border rounded text-center" />
+              </div>
+              <p id="macro-sum-status" class="text-xs mt-2 font-medium"></p>
+            </div>
+
+            <div class="p-4 border rounded-lg bg-white mt-3">
+              <label class="text-xs text-gray-500 block mb-2">Program</label>
+              <div class="grid grid-cols-1 gap-2">
+                <select id="client-goal" class="p-3 border rounded-lg">
+                  <option value="">Select Goal</option>
+                  <option value="Weight Loss">Fat Loss</option>
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Muscle Building">Muscle Gain</option>
+                </select>
+                <select id="diet-type" class="p-3 border rounded-lg">
+                  <option value="">Diet Type (Any)</option>
+                  <option>Low Carb</option><option>Balanced</option><option>Vegetarian</option><option>Vegan</option><option>High Protein</option><option>Gluten Free</option>
+                </select>
+                <input id="calorie-adjustment-amount" type="number" placeholder="Calorie Adj. e.g. -500" class="p-3 border rounded-lg" />
+              </div>
+            </div>
+
+            <div class="mt-3 flex gap-3">
+              <button id="save-client" class="bg-emerald-600 text-white px-4 py-2 rounded">Save Client & Calculate</button>
+              <button id="autofill-30" class="bg-indigo-600 text-white px-4 py-2 rounded">Auto-Fill 30-Day Program</button>
+              <button id="generate-pdf" class="bg-blue-600 text-white px-4 py-2 rounded">Generate Program PDF</button>
+              <button id="export-json" class="bg-gray-200 px-3 py-2 rounded">Export JSON</button>
+              <button id="import-json" class="bg-gray-200 px-3 py-2 rounded">Import JSON</button>
+            </div>
+
+            <p class="text-xs text-gray-500 mt-2">Autosaves automatically to localStorage.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Schedule grid -->
+      <div class="bg-white p-6 rounded-xl shadow border-frame pdf-card mt-6">
+        <h2 class="text-xl font-semibold mb-4">Monthly Schedule (30 Days)</h2>
+        <div id="schedule-grid" class="overflow-x-scroll flex flex-row space-x-3 pb-4"></div>
+      </div>
+    </div>
+
+    <!-- Recipes View -->
+    <div id="recipes-view" class="view hidden">
+      <div class="bg-white p-6 rounded-xl shadow border-frame">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-semibold">Recipe Library</h2>
+          <div class="flex gap-2">
+            <button id="add-recipe" class="bg-blue-600 text-white px-3 py-2 rounded">Add Recipe</button>
+            <button id="export-recipes" class="bg-gray-200 px-3 py-2 rounded">Export</button>
+            <button id="import-recipes" class="bg-gray-200 px-3 py-2 rounded">Import</button>
+          </div>
+        </div>
+        <div id="recipe-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+      </div>
+    </div>
+
+    <!-- Workouts View -->
+    <div id="workouts-view" class="view hidden">
+      <div class="bg-white p-6 rounded-xl shadow border-frame">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-semibold">Workout Library</h2>
+          <div class="flex gap-2">
+            <button id="add-workout" class="bg-blue-600 text-white px-3 py-2 rounded">Add Workout</button>
+            <button id="export-workouts" class="bg-gray-200 px-3 py-2 rounded">Export</button>
+            <button id="import-workouts" class="bg-gray-200 px-3 py-2 rounded">Import</button>
+          </div>
+        </div>
+        <div id="workout-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Modals -->
+  <div id="recipe-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-70 flex items-center justify-center p-4 z-50">
+    <div class="bg-white w-full max-w-lg p-6 rounded-xl">
+      <h3 class="text-xl font-bold mb-2">Recipe Editor</h3>
+      <input type="hidden" id="recipe-id" />
+      <input id="recipe-name" class="w-full p-3 border rounded mb-2" placeholder="Recipe name" />
+      <select id="recipe-category" class="w-full p-3 border rounded mb-2">
+        <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option>
+      </select>
+      <input id="recipe-tags" class="w-full p-3 border rounded mb-2" placeholder="Tags (comma separated)" />
+      <input id="recipe-thumb" class="w-full p-3 border rounded mb-2" placeholder="Thumbnail image URL (optional)" />
+      <textarea id="recipe-ingredients" class="w-full p-3 border rounded mb-2" rows="4" placeholder="Ingredients (one per line)"></textarea>
+      <textarea id="recipe-instructions" class="w-full p-3 border rounded mb-2" rows="4" placeholder="Instructions"></textarea>
+      <div class="flex justify-end gap-2">
+        <button onclick="closeModal('recipe-modal')" class="px-4 py-2 rounded border">Cancel</button>
+        <button id="save-recipe" class="px-4 py-2 rounded bg-emerald-600 text-white">Save Recipe</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="workout-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-70 flex items-center justify-center p-4 z-50">
+    <div class="bg-white w-full max-w-lg p-6 rounded-xl">
+      <h3 class="text-xl font-bold mb-2">Workout Editor</h3>
+      <input type="hidden" id="workout-id" />
+      <input id="workout-name" class="w-full p-3 border rounded mb-2" placeholder="Workout name" />
+      <input id="workout-duration" class="w-full p-3 border rounded mb-2" placeholder="Duration in minutes (e.g. 45)" />
+      <input id="workout-thumbnail" class="w-full p-3 border rounded mb-2" placeholder="Thumbnail image URL (optional)" />
+      <input id="workout-document-image" class="w-full p-3 border rounded mb-2" placeholder="Document image URL (optional)" />
+      <textarea id="workout-description" class="w-full p-3 border rounded mb-2" rows="3" placeholder="Short description"></textarea>
+      <textarea id="workout-structure" class="w-full p-3 border rounded mb-2" rows="3" placeholder="Structure / Steps (HTML allowed)"></textarea>
+      <textarea id="workout-tips" class="w-full p-3 border rounded mb-2" rows="3" placeholder="Tips (HTML allowed)"></textarea>
+      <input id="workout-focus" class="w-full p-3 border rounded mb-2" placeholder="Focus tags (comma separated)" />
+      <textarea id="workout-exercises" class="w-full p-3 border rounded mb-2" rows="3" placeholder="Exercises list (comma separated)"></textarea>
+      <div class="flex justify-end gap-2">
+        <button onclick="closeModal('workout-modal')" class="px-4 py-2 rounded border">Cancel</button>
+        <button id="save-workout" class="px-4 py-2 rounded bg-emerald-600 text-white">Save Workout</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="schedule-item-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-70 flex items-center justify-center p-4 z-50">
+    <div class="bg-white w-full max-w-lg p-6 rounded-xl max-h-[80vh] overflow-y-auto">
+      <h3 class="text-xl font-bold mb-3" id="schedule-modal-title">Select Item</h3>
+      <input type="hidden" id="schedule-day-index" />
+      <input type="hidden" id="schedule-item-type" />
+      <div class="flex border-b border-gray-200 mb-4">
+        <button id="modal-tab-recipe" class="p-2 flex-1 text-center" onclick="showScheduleList('recipe')">Recipes</button>
+        <button id="modal-tab-workout" class="p-2 flex-1 text-center" onclick="showScheduleList('workout')">Workouts</button>
+      </div>
+      <div id="schedule-item-list" class="space-y-3"></div>
+      <div class="flex justify-end mt-4">
+        <button onclick="closeModal('schedule-item-modal')" class="px-4 py-2 rounded border">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import file input -->
+  <input id="import-file" type="file" accept="application/json" style="display:none" />
+
+  <!-- PDF Loader -->
+  <div id="pdf-loader" aria-hidden="true">
+    <div class="card">
+      <div class="spinner" role="img" aria-label="loading"></div>
+      <div style="font-weight:700; font-size:18px; margin-bottom:6px;">Generating your PDF…</div>
+      <div style="color:#6b7280; font-size:13px;">This can take a few seconds depending on images and length.</div>
+      <div class="progress-outer" style="margin-top:16px;">
+        <div id="pdf-progress" class="progress-inner" style="width:0%"></div>
+      </div>
+      <div id="pdf-progress-text" style="margin-top:8px; font-size:12px; color:#6b7280;">Preparing…</div>
+    </div>
+  </div>
+
+  <!-- Feedback -->
+  <div id="feedback" class="feedback bg-emerald-600">Saved</div>
+
+<script>
+/* Full single-file app with Notes and PDF loader. No questions. */
+const STORAGE_KEY = 'hwf_app_final_with_cover_calendar_and_notes';
+const MAX_MEALS_PER_DAY = 4;
+const REST_ID = 'REST_SESSION';
+const LOGO_URL = "https://placehold.co/200x200?text=LOGO";
+
+/* initial state */
+window.state = {
+  clientName: '',
+  gender: '',
+  age: '',
+  weight: '',
+  startingWeight: '',
+  height: '',
+  activityLevel: '',
+  tdee: 0,
+  macroProtein: 40,
+  macroCarb: 40,
+  macroFat: 20,
+  clientGoal: '',
+  calorieAdjustmentAmount: 0,
+  targetCalories: 0,
+  dietType: '',
+  startDate: '',
+  profileImageBase64: '',
+  frontCoverBase64: '',
+  notes: '',
+  monthlySchedule: Array(30).fill(null).map(()=>({meals:[],workouts:[]})),
+  recipes: [
+    { id: 'r1', name: 'Overnight Oats', category:'Breakfast', tags:['Balanced','Vegetarian'], ingredients:['Oats','Milk','Banana'], instructions:'Mix oats and milk and refrigerate overnight.', thumbnail: 'https://placehold.co/120x100?text=Overnight+Oats' },
+    { id: 'r2', name: 'Tuna Lettuce Wrap', category:'Lunch', tags:['Low Carb','High Protein'], ingredients:['Tuna','Lettuce'], instructions:'Mix tuna with seasoning, serve in lettuce leaves.', thumbnail: 'https://placehold.co/120x100?text=Tuna+Wrap' },
+    { id: 'r3', name: 'Chicken Stir Fry', category:'Dinner', tags:['Balanced','High Protein'], ingredients:['Chicken','Veggies','Soy Sauce'], instructions:'Stir fry chicken and vegetables.', thumbnail: 'https://placehold.co/120x100?text=Stir+Fry' },
+    { id: 'r4', name: 'Protein Smoothie', category:'Snack', tags:['High Protein'], ingredients:['Protein powder','Banana','Milk'], instructions:'Blend until smooth.', thumbnail: 'https://placehold.co/120x100?text=Smoothie' }
+  ],
+  workouts: [
+    { id: 'w1', name: 'Beginner HIWT', type: 'HIWT', difficulty: 'Beginner', duration: '30 minutes', thumbnailImage: 'https://placehold.co/120x100/14b8a6/FFFFFF?text=W1', documentImage: '', description: 'Beginner-friendly high-intensity interval weight training...', structure: '4 combos...', tips: 'Focus on form...', focus: 'General Fitness, Endurance', exercises: ['Bodyweight Squat', 'Push-up'] },
+    { id: 'w2', name: 'Beginner HIIT', type: 'HIIT', difficulty: 'Beginner', duration: '20 minutes', thumbnailImage: 'https://placehold.co/120x100/06b6d4/FFFFFF?text=H1', documentImage: '', description: 'Short cardio routine...', structure: '4 rounds...', tips: 'Keep movement continuous', focus: 'Cardio, Weight Loss', exercises: ['Jumping Jacks'] },
+    { id: 'w3', name: 'Beginner Core', type: 'CORE', difficulty: 'Beginner', duration: '15 minutes', thumbnailImage: 'https://placehold.co/120x100/f3f4f6/111827?text=C1', documentImage: '', description: 'Gentle core...', structure: '3 static exercises...', tips: 'Maintain a straight line', focus: 'Core Strength', exercises: ['Plank Hold'] },
+    { id: 'w4', name: 'Beginner Abs', type: 'ABS', difficulty: 'Beginner', duration: '15 minutes', thumbnailImage: 'https://placehold.co/120x100/14b8a6/FFFFFF?text=A1', documentImage: '', description: 'Dynamic abdominal movements...', structure: '3 exercises...', tips: 'Slow controlled reps', focus: 'Core Definition', exercises: ['Crunches'] },
+    { id: 'w5', name: 'Beginner Muscle Building', type: 'MUSCLE BUILDING', difficulty: 'Beginner', duration: '45 minutes', thumbnailImage: 'https://placehold.co/120x100/06b6d4/FFFFFF?text=M1', documentImage: '', description: 'GVT-style full body workout.', structure: '<ul><li>KNEE PUSH-UP – 10x</li></ul>', tips: '<ul><li>Scale weight</li></ul>', focus: 'Muscle Building', exercises: ['Bodyweight Squat'] }
+  ]
+};
+
+/* helpers & UI */
+const getEl = id => document.getElementById(id);
+const uid = () => 'id_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const showFeedback = (msg, isError=false) => {
+  const f = getEl('feedback');
+  f.textContent = msg;
+  f.style.background = isError ? '#dc2626' : '#059669';
+  f.style.display = 'block';
+  clearTimeout(f._t);
+  f._t = setTimeout(()=> f.style.display = 'none', 3000);
+};
+function saveToLocal(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(window.state)); } catch(e){ console.error(e); showFeedback('Failed to save', true);} }
+function loadFromLocal(){ try { const raw = localStorage.getItem(STORAGE_KEY); if(raw){ const parsed = JSON.parse(raw); window.state = Object.assign(window.state, parsed); if(!Array.isArray(window.state.monthlySchedule) || window.state.monthlySchedule.length !== 30){ window.state.monthlySchedule = Array(30).fill(null).map(()=>({meals:[],workouts:[]})); } } else saveToLocal(); } catch(e){ console.error(e); saveToLocal(); } }
+
+/* init */
+document.addEventListener('DOMContentLoaded', ()=> {
+  document.querySelectorAll('.tab-button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.tab-button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      const view = btn.getAttribute('data-view');
+      document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden'));
+      getEl(`${view}-view`).classList.remove('hidden');
+    });
+  });
+
+  getEl('profile-image-input').addEventListener('change', handleProfileImage);
+  getEl('front-cover-input').addEventListener('change', handleFrontCoverImage);
+
+  loadFromLocal();
+  populateClientUI();
+  renderRecipeLibrary();
+  renderWorkoutLibrary();
+  renderScheduleGrid();
+  setupListeners();
+});
+
+/* TDEE & macros */
+function calculateBMR(gender, weight, height, age){
+  if(!gender || isNaN(weight) || isNaN(height) || isNaN(age)) return 0;
+  if(gender === 'male') return (10 * weight) + (6.25 * height) - (5 * age) + 5;
+  return (10 * weight) + (6.25 * height) - (5 * age) - 161;
+}
+function calculateTDEE(){
+  const gender = getEl('gender').value;
+  const age = parseFloat(getEl('age').value);
+  const weight = parseFloat(getEl('weight').value);
+  const height = parseFloat(getEl('height').value);
+  const activity = parseFloat(getEl('activity-level').value);
+  if(!gender || isNaN(age) || isNaN(weight) || isNaN(height) || isNaN(activity)) return 0;
+  const bmr = calculateBMR(gender, weight, height, age);
+  return Math.round(bmr * activity);
+}
+function updateMacroDisplay(){
+  const P = parseInt(getEl('macro-protein').value) || 0;
+  const C = parseInt(getEl('macro-carb').value) || 0;
+  const F = parseInt(getEl('macro-fat').value) || 0;
+  const sum = P + C + F;
+  const status = getEl('macro-sum-status');
+  if(sum === 100) { status.textContent = 'Total: 100% (Valid)'; status.style.color = '#059669'; }
+  else { status.textContent = `Total: ${sum}% (Must be 100%)`; status.style.color = '#dc2626'; }
+}
+
+/* populate UI */
+function populateClientUI(){
+  getEl('client-name').value = window.state.clientName || '';
+  getEl('gender').value = window.state.gender || '';
+  getEl('age').value = window.state.age || '';
+  getEl('weight').value = window.state.weight || '';
+  getEl('starting-weight').value = window.state.startingWeight || '';
+  getEl('height').value = window.state.height || '';
+  getEl('activity-level').value = window.state.activityLevel || '';
+  getEl('tdee').value = window.state.tdee || 0;
+  getEl('display-tdee').textContent = Math.round(window.state.tdee || 0).toLocaleString();
+  getEl('macro-protein').value = window.state.macroProtein;
+  getEl('macro-carb').value = window.state.macroCarb;
+  getEl('macro-fat').value = window.state.macroFat;
+  getEl('macro-sum-status').textContent = '';
+  getEl('client-goal').value = window.state.clientGoal || '';
+  getEl('calorie-adjustment-amount').value = window.state.calorieAdjustmentAmount || 0;
+  getEl('diet-type').value = window.state.dietType || '';
+  getEl('start-date').value = window.state.startDate || '';
+  getEl('client-notes').value = window.state.notes || '';
+
+  if(window.state.profileImageBase64){
+    getEl('profile-preview').src = window.state.profileImageBase64; getEl('profile-preview').style.display = 'block';
+  } else getEl('profile-preview').style.display = 'none';
+  if(window.state.frontCoverBase64){
+    getEl('front-cover-preview').src = window.state.frontCoverBase64; getEl('front-cover-preview').style.display = 'block';
+  } else getEl('front-cover-preview').style.display = 'none';
+}
+
+/* listeners */
+function setupListeners(){
+  ['client-name','gender','age','weight','starting-weight','height','activity-level','client-goal','diet-type','calorie-adjustment-amount','start-date','client-notes'].forEach(id=>{
+    getEl(id).addEventListener('input', ()=> {
+      window.state.clientName = getEl('client-name').value;
+      window.state.gender = getEl('gender').value;
+      window.state.age = getEl('age').value;
+      window.state.weight = getEl('weight').value;
+      window.state.startingWeight = getEl('starting-weight').value;
+      window.state.height = getEl('height').value;
+      window.state.activityLevel = getEl('activity-level').value;
+      window.state.clientGoal = getEl('client-goal').value;
+      window.state.dietType = getEl('diet-type').value;
+      window.state.calorieAdjustmentAmount = Number(getEl('calorie-adjustment-amount').value) || 0;
+      window.state.startDate = getEl('start-date').value;
+      window.state.notes = getEl('client-notes').value;
+      saveToLocal();
+    });
+  });
+
+  ['macro-protein','macro-carb','macro-fat'].forEach(id=>{
+    getEl(id).addEventListener('input', ()=>{
+      updateMacroDisplay();
+      window.state.macroProtein = Number(getEl('macro-protein').value) || 0;
+      window.state.macroCarb = Number(getEl('macro-carb').value) || 0;
+      window.state.macroFat = Number(getEl('macro-fat').value) || 0;
+      saveToLocal();
+    });
+  });
+
+  getEl('save-client').addEventListener('click', ()=> {
+    window.state.clientName = getEl('client-name').value;
+    window.state.gender = getEl('gender').value;
+    window.state.age = getEl('age').value;
+    window.state.weight = getEl('weight').value;
+    window.state.startingWeight = getEl('starting-weight').value;
+    window.state.height = getEl('height').value;
+    window.state.activityLevel = getEl('activity-level').value;
+    window.state.clientGoal = getEl('client-goal').value;
+    window.state.calorieAdjustmentAmount = Number(getEl('calorie-adjustment-amount').value) || 0;
+    window.state.notes = getEl('client-notes').value;
+    const tdee = calculateTDEE();
+    window.state.tdee = tdee;
+    window.state.targetCalories = tdee + (window.state.calorieAdjustmentAmount || 0);
+    getEl('display-tdee').textContent = Math.round(tdee).toLocaleString();
+    saveToLocal();
+    showFeedback('Client saved');
+  });
+
+  getEl('autofill-30').addEventListener('click', ()=> {
+    window.state.clientName = getEl('client-name').value;
+    window.state.clientGoal = getEl('client-goal').value;
+    window.state.dietType = getEl('diet-type').value;
+    saveToLocal();
+    autofill30Days();
+  });
+
+  getEl('generate-pdf').addEventListener('click', ()=> {
+    generatePDF();
+  });
+
+  getEl('export-json').addEventListener('click', ()=> {
+    const data = JSON.stringify(window.state, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `hwf_export_${new Date().toISOString().slice(0,10)}.json`; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  getEl('import-json').addEventListener('click', ()=> { getEl('import-file').click(); });
+  getEl('import-file').addEventListener('change', (e)=> {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        window.state = Object.assign(window.state, parsed);
+        if(!Array.isArray(window.state.monthlySchedule) || window.state.monthlySchedule.length !== 30){
+          window.state.monthlySchedule = Array(30).fill(null).map(()=>({meals:[],workouts:[]})); 
+        }
+        saveToLocal();
+        populateClientUI();
+        renderRecipeLibrary();
+        renderWorkoutLibrary();
+        renderScheduleGrid();
+        showFeedback('Import complete');
+      } catch(err){
+        console.error(err); showFeedback('Invalid import file', true);
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  getEl('add-recipe').addEventListener('click', ()=> openRecipeModal());
+  getEl('add-workout').addEventListener('click', ()=> openWorkoutModal());
+}
+
+/* recipes and workouts: same as previous file (CRUD) */
+function renderRecipeLibrary(){
+  const list = getEl('recipe-list');
+  if(!window.state.recipes) window.state.recipes = [];
+  list.innerHTML = window.state.recipes.map(r => `
+    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+      <div class="flex gap-3">
+        ${ r.thumbnail ? `<img src="${escapeHtml(r.thumbnail)}" class="thumb" onerror="this.style.display='none'"/>` : '' }
+        <div class="flex-1">
+          <h4 class="font-bold text-lg mb-1">${escapeHtml(r.name)}</h4>
+          <div class="text-xs text-gray-500 mb-2">${escapeHtml(r.category)} • ${((r.tags||[]).join(', '))}</div>
+          <div class="text-sm text-gray-600 mb-3">${truncate((r.instructions||''),200)}</div>
+          <div class="flex gap-2">
+            <button class="px-2 py-1 bg-yellow-100 rounded text-xs" onclick="openRecipeModal('${r.id}')">Edit</button>
+            <button class="px-2 py-1 bg-red-100 rounded text-xs" onclick="deleteRecipe('${r.id}')">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+function openRecipeModal(id){
+  if(!id){
+    getEl('recipe-id').value = '';
+    getEl('recipe-name').value = '';
+    getEl('recipe-category').value = 'Breakfast';
+    getEl('recipe-tags').value = '';
+    getEl('recipe-thumb').value = '';
+    getEl('recipe-ingredients').value = '';
+    getEl('recipe-instructions').value = '';
+  } else {
+    const r = window.state.recipes.find(x=>x.id===id);
+    if(!r) return;
+    getEl('recipe-id').value = r.id;
+    getEl('recipe-name').value = r.name;
+    getEl('recipe-category').value = r.category || 'Lunch';
+    getEl('recipe-tags').value = (r.tags||[]).join(',');
+    getEl('recipe-thumb').value = r.thumbnail || '';
+    getEl('recipe-ingredients').value = (r.ingredients||[]).join('\n');
+    getEl('recipe-instructions').value = r.instructions || '';
+  }
+  getEl('recipe-modal').classList.remove('hidden');
+}
+getEl('save-recipe').addEventListener('click', ()=>{
+  const id = getEl('recipe-id').value;
+  const data = {
+    id: id || uid(),
+    name: getEl('recipe-name').value.trim(),
+    category: getEl('recipe-category').value,
+    tags: (getEl('recipe-tags').value || '').split(',').map(s=>s.trim()).filter(Boolean),
+    thumbnail: getEl('recipe-thumb').value.trim(),
+    ingredients: (getEl('recipe-ingredients').value || '').split('\n').map(s=>s.trim()).filter(Boolean),
+    instructions: getEl('recipe-instructions').value.trim()
+  };
+  if(!data.name) { showFeedback('Recipe name required', true); return; }
+  if(id){
+    const idx = window.state.recipes.findIndex(r=>r.id===id);
+    if(idx !== -1) window.state.recipes[idx] = data;
+  } else window.state.recipes.unshift(data);
+  saveToLocal();
+  renderRecipeLibrary();
+  closeModal('recipe-modal');
+  showFeedback('Recipe saved');
+});
+function deleteRecipe(id){
+  if(!confirm('Delete recipe?')) return;
+  window.state.recipes = window.state.recipes.filter(r=>r.id!==id);
+  saveToLocal();
+  renderRecipeLibrary();
+  renderScheduleGrid();
+  showFeedback('Recipe deleted');
+}
+
+function renderWorkoutLibrary(){
+  const list = getEl('workout-list');
+  if(!window.state.workouts) window.state.workouts = [];
+  list.innerHTML = window.state.workouts.map(w => `
+    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm flex gap-3">
+      <img src="${escapeHtml(w.thumbnailImage||'')}" class="thumb" onerror="this.style.display='none'"/>
+      <div class="flex-1">
+        <h4 class="font-bold text-lg mb-1">${escapeHtml(w.name)}</h4>
+        <div class="text-xs text-gray-500 mb-2"><strong>${escapeHtml(w.duration)}</strong> • ${escapeHtml(w.difficulty || '')} • ${escapeHtml(w.type || '')}</div>
+        <div class="text-sm text-gray-600 mb-3">${truncate((w.description||''),140)}</div>
+        <div class="flex gap-2">
+          <button class="px-2 py-1 bg-yellow-100 rounded text-xs" onclick="openWorkoutModal('${w.id}')">Edit</button>
+          <button class="px-2 py-1 bg-red-100 rounded text-xs" onclick="deleteWorkout('${w.id}')">Delete</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+function openWorkoutModal(id){
+  if(!id){
+    getEl('workout-id').value = '';
+    getEl('workout-name').value = '';
+    getEl('workout-duration').value = '';
+    getEl('workout-thumbnail').value = '';
+    getEl('workout-document-image').value = '';
+    getEl('workout-description').value = '';
+    getEl('workout-structure').value = '';
+    getEl('workout-tips').value = '';
+    getEl('workout-focus').value = '';
+    getEl('workout-exercises').value = '';
+  } else {
+    const w = window.state.workouts.find(x=>x.id===id);
+    if(!w) return;
+    getEl('workout-id').value = w.id;
+    getEl('workout-name').value = w.name;
+    getEl('workout-duration').value = parseDurationToMinutes(w.duration) || '';
+    getEl('workout-thumbnail').value = w.thumbnailImage || '';
+    getEl('workout-document-image').value = w.documentImage || '';
+    getEl('workout-description').value = w.description || '';
+    getEl('workout-structure').value = w.structure || '';
+    getEl('workout-tips').value = w.tips || '';
+    getEl('workout-focus').value = w.focus || '';
+    getEl('workout-exercises').value = (w.exercises||[]).join(',');
+  }
+  getEl('workout-modal').classList.remove('hidden');
+}
+getEl('save-workout').addEventListener('click', ()=>{
+  const id = getEl('workout-id').value;
+  const name = getEl('workout-name').value.trim();
+  const durMin = parseInt(getEl('workout-duration').value) || 0;
+  const thumbnail = getEl('workout-thumbnail').value.trim();
+  const docImg = getEl('workout-document-image').value.trim();
+  const desc = getEl('workout-description').value.trim();
+  const struct = getEl('workout-structure').value.trim();
+  const tips = getEl('workout-tips').value.trim();
+  const focus = getEl('workout-focus').value.trim();
+  const exList = (getEl('workout-exercises').value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(!name){ showFeedback('Workout name required', true); return; }
+  const data = { id: id || uid(), name, duration: `${durMin} minutes`, thumbnailImage: thumbnail, documentImage: docImg, description: desc, structure: struct, tips, focus, exercises: exList, difficulty: 'Custom' };
+  if(id){
+    const idx = window.state.workouts.findIndex(w=>w.id===id);
+    if(idx !== -1) window.state.workouts[idx] = data;
+  } else window.state.workouts.unshift(data);
+  saveToLocal();
+  renderWorkoutLibrary();
+  closeModal('workout-modal');
+  showFeedback('Workout saved');
+});
+function deleteWorkout(id){
+  if(!confirm('Delete workout?')) return;
+  window.state.workouts = window.state.workouts.filter(w=>w.id!==id);
+  saveToLocal();
+  renderWorkoutLibrary();
+  renderScheduleGrid();
+  showFeedback('Workout deleted');
+}
+
+/* schedule rendering & operations */
+function renderScheduleGrid(){
+  const gridEl = getEl('schedule-grid');
+  gridEl.innerHTML = window.state.monthlySchedule.map((dayData, index) => {
+    const dayNum = index + 1;
+    const mealsCount = dayData.meals.length;
+    const workoutsCount = dayData.workouts.length;
+    const mealButtonDisabled = mealsCount >= MAX_MEALS_PER_DAY;
+    const mealButtonText = mealButtonDisabled ? `Meals Full (${mealsCount}/${MAX_MEALS_PER_DAY})` : `Add Meal (${mealsCount}/${MAX_MEALS_PER_DAY})`;
+    const mealsHtml = (dayData.meals.map((m,i)=>`<span class="meal-pill mr-1">${escapeHtml(m.name)} <button class="text-red-600 ml-1" onclick="removeItemFromSchedule(${index}, 'meals', ${i})">x</button></span>`)).join('') || '<span class="text-xs text-gray-400">None</span>';
+    const workHtml = (dayData.workouts.map((w,i)=>`<span class="session-pill mr-1">${escapeHtml(w.name)} <button class="text-red-600 ml-1" onclick="removeItemFromSchedule(${index}, 'workouts', ${i})">x</button></span>`)).join('') || '<span class="text-xs text-gray-400">None</span>';
+    return `
+      <div class="min-w-[150px] md:min-w-[200px] bg-gray-50 p-3 rounded-xl border border-gray-200 flex flex-col justify-between shadow-md">
+        <h5 class="text-sm font-bold mb-2 text-gray-700">Day ${dayNum}</h5>
+        <div>
+          <p class="text-xs text-gray-600 font-medium">Meals</p>
+          <div class="mb-2">${mealsHtml}</div>
+          <button ${mealButtonDisabled ? 'disabled' : ''} onclick="openScheduleItemModal(${index}, 'meals')" class="w-full text-xs text-blue-500 border border-blue-500 rounded-full py-1 ${mealButtonDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-50'}">${mealButtonText}</button>
+        </div>
+        <div class="mt-3">
+          <p class="text-xs text-gray-600 font-medium">Workouts</p>
+          <div class="mb-2">${workHtml}</div>
+          <button onclick="openScheduleItemModal(${index}, 'workouts')" class="w-full text-xs text-purple-500 border border-purple-500 rounded-full py-1 hover:bg-purple-50">Add Workout (${workoutsCount})</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* open schedule modal */
+function openScheduleItemModal(dayIndex, type){
+  if(type === 'meals' && window.state.monthlySchedule[dayIndex].meals.length >= MAX_MEALS_PER_DAY){
+    showFeedback(`Cannot add > ${MAX_MEALS_PER_DAY} meals/day`, true); return;
+  }
+  getEl('schedule-day-index').value = dayIndex;
+  getEl('schedule-item-type').value = type;
+  getEl('schedule-modal-title').textContent = type === 'meals' ? `Add Meal for Day ${dayIndex+1}` : `Add Workout for Day ${dayIndex+1}`;
+  showScheduleList(type === 'meals' ? 'recipe' : 'workout');
+  getEl('schedule-item-modal').classList.remove('hidden');
+}
+
+function showScheduleList(type){
+  const listEl = getEl('schedule-item-list');
+  const data = type === 'recipe' ? window.state.recipes : window.state.workouts;
+  if(!data || data.length === 0){
+    listEl.innerHTML = `<p class="text-center text-gray-500 p-4">No ${type}s found. Add some in the Library tab.</p>`;
+    return;
+  }
+  listEl.innerHTML = data.map(item => `
+    <div class="p-3 border rounded-lg flex justify-between items-center ${type==='recipe' ? 'bg-green-50' : 'bg-purple-50'}">
+      <div class="flex items-center gap-3">
+        ${ type==='workout' && item.thumbnailImage ? `<img src="${escapeHtml(item.thumbnailImage)}" class="thumb" onerror="this.style.display='none'"/>` : (type==='recipe' && item.thumbnail ? `<img src="${escapeHtml(item.thumbnail)}" class="thumb" onerror="this.style.display='none'"/>` : '') }
+        <span class="font-medium text-sm">${escapeHtml(item.name)}</span>
+      </div>
+      <button onclick="addItemToSchedule('${item.id}', '${(item.name||'').replace(/'/g,"\\'")}', '${type}')" class="text-xs px-3 py-1 bg-white rounded-full text-gray-700 shadow">Add</button>
+    </div>
+  `).join('');
+  getEl('modal-tab-recipe').classList.toggle('font-semibold', type==='recipe');
+  getEl('modal-tab-workout').classList.toggle('font-semibold', type==='workout');
+}
+
+function addItemToSchedule(id, name, type){
+  const dayIndex = parseInt(getEl('schedule-day-index').value,10);
+  const scheduleType = getEl('schedule-item-type').value; // 'meals' or 'workouts'
+  if((scheduleType === 'meals' && type !== 'recipe') || (scheduleType === 'workouts' && type !== 'workout')){ showFeedback('Type mismatch', true); return; }
+  if(scheduleType === 'meals' && window.state.monthlySchedule[dayIndex].meals.length >= MAX_MEALS_PER_DAY){ showFeedback(`A day cannot have more than ${MAX_MEALS_PER_DAY} meals`, true); closeModal('schedule-item-modal'); return; }
+  const newSched = JSON.parse(JSON.stringify(window.state.monthlySchedule));
+  if(scheduleType === 'meals'){
+    const r = window.state.recipes.find(x=>x.id===id) || { id, name };
+    newSched[dayIndex].meals.push({ id: r.id, name: r.name, category: r.category || 'Meal', thumbnail: r.thumbnail || '' });
+  } else {
+    const w = window.state.workouts.find(x=>x.id===id) || { id, name };
+    const session = { ids: [w.id], name: w.name, duration: w.duration || '0 minutes', exercises: w.exercises ? (Array.isArray(w.exercises) ? w.exercises.join(', ') : w.exercises) : '', description: w.description || '', structure: w.structure || '', tips: w.tips || '', documentImage: w.documentImage || '' };
+    newSched[dayIndex].workouts.push(session);
+  }
+  window.state.monthlySchedule = newSched;
+  saveToLocal();
+  renderScheduleGrid();
+  closeModal('schedule-item-modal');
+  showFeedback(`Added ${name} to Day ${dayIndex+1}`);
+}
+
+function removeItemFromSchedule(dayIndex, scheduleType, itemIndex){
+  const newSched = JSON.parse(JSON.stringify(window.state.monthlySchedule));
+  newSched[dayIndex][scheduleType].splice(itemIndex,1);
+  window.state.monthlySchedule = newSched;
+  saveToLocal();
+  renderScheduleGrid();
+  showFeedback('Removed item');
+}
+function closeModal(id){ getEl(id).classList.add('hidden'); }
+
+/* autofill */
+function findWorkoutByNameContains(sub){ if(!sub) return null; const s = sub.toLowerCase(); return window.state.workouts.find(w => (w.name||'').toLowerCase().includes(s)); }
+function findWorkoutById(id){ return window.state.workouts.find(w => w.id === id); }
+
+function getWorkoutsForGoalDay(goal, dayOfWeek){
+  const hiit = findWorkoutById('w2') || findWorkoutByNameContains('hiit');
+  const hiwt = findWorkoutById('w1') || findWorkoutByNameContains('hiwt');
+  const core = findWorkoutById('w3') || findWorkoutByNameContains('core');
+  const abs = findWorkoutById('w4') || findWorkoutByNameContains('abs');
+  const muscle = findWorkoutById('w5') || findWorkoutByNameContains('muscle');
+
+  const getRef = (o) => o ? ({ id: o.id, name: o.name }) : null;
+  let workoutsForDay = [];
+  switch(goal){
+    case 'Weight Loss':
+      switch(dayOfWeek){
+        case 0: workoutsForDay = [getRef(hiit), getRef(core)]; break;
+        case 1: workoutsForDay = [getRef(hiwt)]; break;
+        case 2: workoutsForDay = [getRef(hiit), getRef(abs)]; break;
+        case 3: workoutsForDay = [getRef(hiwt)]; break;
+        case 4: workoutsForDay = [getRef(hiit), getRef(core)]; break;
+        case 5: workoutsForDay = [getRef(muscle)]; break;
+        case 6: workoutsForDay = [{ id: REST_ID, name: 'Rest' }]; break;
+      }
+      break;
+    case 'Muscle Building':
+      switch(dayOfWeek){
+        case 0: workoutsForDay = [getRef(muscle)]; break;
+        case 1: workoutsForDay = [getRef(hiit), getRef(abs)]; break;
+        case 2: workoutsForDay = [getRef(muscle)]; break;
+        case 3: workoutsForDay = [getRef(hiit), getRef(core)]; break;
+        case 4: workoutsForDay = [getRef(muscle)]; break;
+        case 5: workoutsForDay = [getRef(hiit), getRef(abs)]; break;
+        case 6: workoutsForDay = [{ id: REST_ID, name: 'Rest' }]; break;
+      }
+      break;
+    case 'Maintenance':
+      switch(dayOfWeek){
+        case 0: workoutsForDay = [getRef(hiwt), getRef(abs)]; break;
+        case 1: workoutsForDay = [{ id: REST_ID, name: 'Rest' }]; break;
+        case 2: workoutsForDay = [getRef(hiit), getRef(core)]; break;
+        case 3: workoutsForDay = [{ id: REST_ID, name: 'Rest' }]; break;
+        case 4: workoutsForDay = [getRef(muscle)]; break;
+        case 5: workoutsForDay = [{ id: REST_ID, name: 'Rest' }]; break;
+        case 6: workoutsForDay = [{ id: REST_ID, name: 'Rest' }]; break;
+      }
+      break;
+    default:
+      workoutsForDay = [{ id: REST_ID, name: 'Rest' }];
+  }
+  return workoutsForDay.filter(Boolean);
+}
+function parseDurationToMinutes(duration){
+  if(!duration) return 0;
+  if(typeof duration === 'number') return duration;
+  const s = String(duration).toLowerCase();
+  const hrMatch = s.match(/(\d+)\s*h/);
+  const minMatch = s.match(/(\d+)\s*m/);
+  let total = 0;
+  if(hrMatch) total += parseInt(hrMatch[1]) * 60;
+  if(minMatch) total += parseInt(minMatch[1]);
+  if(total === 0){
+    const num = s.match(/(\d+)/);
+    if(num) total = parseInt(num[1]);
+  }
+  return total || 0;
+}
+function makeCombinedSession(workoutRefs){
+  if(!workoutRefs || workoutRefs.length===0) return null;
+  if(workoutRefs.length===1 && workoutRefs[0].id === REST_ID) return { ids: [REST_ID], name: 'REST', duration: '0 minutes', exercises: 'Rest / Active recovery', description: 'Rest / active recovery' };
+  const ids = []; const names = []; let totalMin = 0; const exercisesArr = []; let descArr = []; let structArr = []; let tipsArr = []; let focusArr = [];
+  workoutRefs.forEach(ref=>{
+    if(!ref) return;
+    if(ref.id === REST_ID){ ids.push(REST_ID); names.push('REST'); return; }
+    const full = window.state.workouts.find(w=>w.id === ref.id);
+    if(!full) return;
+    ids.push(full.id); names.push(full.name); totalMin += parseDurationToMinutes(full.duration);
+    if(full.exercises) exercisesArr.push(Array.isArray(full.exercises) ? full.exercises.join(', ') : full.exercises);
+    if(full.description) descArr.push(full.description);
+    if(full.structure) structArr.push(full.structure);
+    if(full.tips) tipsArr.push(full.tips);
+    if(full.focus) focusArr.push(full.focus);
+  });
+  const sessionName = names.join(' + ');
+  return { ids, name: sessionName, duration: `${totalMin} minutes`, exercises: exercisesArr.join(' \n'), description: descArr.join('\n\n'), structure: structArr.join('\n\n'), tips: tipsArr.join('\n\n'), focus: focusArr.join(', ') };
+}
+
+/* recipe pool & autofill */
+function getRecipePool(category, diet){
+  let pool = window.state.recipes.filter(r => (r.category||'').toLowerCase() === (category||'').toLowerCase());
+  if(diet && diet.trim()){
+    pool = pool.filter(r => (r.tags||[]).map(t=>t.toLowerCase()).includes(diet.toLowerCase()));
+  }
+  if(pool.length === 0) pool = window.state.recipes.filter(r => (r.category||'').toLowerCase() === (category||'').toLowerCase());
+  if(pool.length === 0) pool = window.state.recipes.slice();
+  return pool;
+}
+function autofill30Days(){
+  const goal = window.state.clientGoal;
+  if(!goal){ showFeedback('Select a client goal before auto-fill', true); return; }
+  const diet = window.state.dietType || '';
+  const pools = {
+    Breakfast: getRecipePool('Breakfast', diet),
+    Lunch: getRecipePool('Lunch', diet),
+    Dinner: getRecipePool('Dinner', diet),
+    Snack: getRecipePool('Snack', diet)
+  };
+  const idx = { Breakfast:0, Lunch:0, Dinner:0, Snack:0 };
+  const newSchedule = Array.from({length:30}, (_,i)=>{
+    const dayOfWeek = i % 7;
+    const wRefs = getWorkoutsForGoalDay(goal, dayOfWeek);
+    const session = makeCombinedSession(wRefs);
+    const meals = [];
+    ['Breakfast','Lunch','Dinner','Snack'].forEach(mealType=>{
+      const pool = pools[mealType];
+      if(pool.length===0) return;
+      const r = pool[idx[mealType] % pool.length];
+      idx[mealType] = idx[mealType] + 1;
+      meals.push({ id: r.id, name: r.name, category: r.category || mealType, thumbnail: r.thumbnail || '' });
+    });
+    return { meals, workouts: session ? [session] : [] };
+  });
+  window.state.monthlySchedule = newSchedule;
+  saveToLocal();
+  renderScheduleGrid();
+  showFeedback('Auto-fill complete');
+}
+
+/* ---------- PDF generation & loader ---------- */
+
+/* helpers */
+function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+function formatDateISO(d){ if(!d) return ''; const dt = new Date(d); if(isNaN(dt)) return ''; return dt.toISOString().slice(0,10); }
+function addDaysISO(iso, days){ if(!iso) return ''; const dt = new Date(iso); dt.setDate(dt.getDate() + days); return dt.toISOString().slice(0,10); }
+
+function makeWeightSVG(starting, current, width=320, height=120){
+  const s = Number(starting) || null;
+  const c = Number(current) || null;
+  if(!s && !c){
+    return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#ffffff"/><text x="${width/2}" y="${height/2}" text-anchor="middle" fill="#9ca3af" font-size="14">No weight data</text></svg>`;
+  }
+  const minVal = Math.min((s||c), (s||c)) - 5;
+  const maxVal = Math.max((s||c), (s||c)) + 5;
+  const pad = 20;
+  const plotW = width - pad*2;
+  const plotH = height - pad*2;
+  const norm = v => {
+    if(v === null || v === undefined) return pad + plotH/2;
+    const t = (v - minVal) / (maxVal - minVal || 1);
+    return pad + (1 - t) * plotH;
+  };
+  const sx = pad;
+  const ex = pad + plotW;
+  const sy = norm(s);
+  const ey = norm(c);
+  let gridLines = '';
+  for(let i=0;i<=4;i++){
+    const y = pad + i*(plotH/4);
+    gridLines += `<line x1="${pad}" y1="${y}" x2="${pad+plotW}" y2="${y}" stroke="#eef2f7" stroke-width="1"/>`;
+  }
+  return `
+    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" style="background:#ffffff;">
+      ${gridLines}
+      <line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${sx}" cy="${sy}" r="5" fill="#7c3aed"/>
+      <circle cx="${ex}" cy="${ey}" r="5" fill="#10b981"/>
+      <text x="${sx}" y="${sy - 8}" fill="#374151" font-size="11" text-anchor="middle">${s ? s + ' kg' : '-'}</text>
+      <text x="${ex}" y="${ey - 8}" fill="#374151" font-size="11" text-anchor="middle">${c ? c + ' kg' : '-'}</text>
+      <text x="${pad}" y="${height - 6}" fill="#9ca3af" font-size="11">Start</text>
+      <text x="${pad + plotW}" y="${height - 6}" fill="#9ca3af" font-size="11" text-anchor="end">Now</text>
+    </svg>
+  `;
+}
+
+/* mini calendar (1 or 2 months depending on span) */
+function makeMiniCalendarHTML(startIso, endIso){
+  if(!startIso) return `<div style="font-size:12px;color:#9ca3af;">No program start date set</div>`;
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  function monthGrid(year, month){
+    const first = new Date(year, month, 1);
+    const last = new Date(year, month+1, 0);
+    const weeks = [];
+    let week = [];
+    for(let i=0;i<first.getDay();i++) week.push(null);
+    for(let d=1; d<=last.getDate(); d++){
+      week.push(new Date(year, month, d));
+      if(week.length === 7){ weeks.push(week); week = []; }
+    }
+    if(week.length) { while(week.length < 7) week.push(null); weeks.push(week); }
+    return weeks;
+  }
+  const months = [];
+  const sYear = start.getFullYear(), sMonth = start.getMonth();
+  const eYear = end.getFullYear(), eMonth = end.getMonth();
+  months.push({y:sYear, m:sMonth});
+  if(!(sYear === eYear && sMonth === eMonth)) months.push({y:eYear, m:eMonth});
+  let html = `<div style="display:flex; gap:8px;">`;
+  months.forEach(({y,m})=>{
+    const weeks = monthGrid(y,m);
+    const monthName = new Date(y,m,1).toLocaleString(undefined,{month:'short', year:'numeric'});
+    html += `<div style="background:#fff; border-radius:8px; border:1px solid #eef2f7; padding:8px; width:140px;">`;
+    html += `<div style="font-weight:700; font-size:12px; color:#111827; margin-bottom:6px;">${monthName}</div>`;
+    html += `<div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; font-size:10px; color:#9ca3af; margin-bottom:6px;">`;
+    ['S','M','T','W','T','F','S'].forEach(dn=> html += `<div style="text-align:center;">${dn}</div>`);
+    html += `</div>`;
+    html += `<div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; font-size:12px; color:#374151;">`;
+    weeks.forEach(week=>{
+      week.forEach(day => {
+        if(!day){ html += `<div style="height:26px;"></div>`; return; }
+        const isStart = day.toISOString().slice(0,10) === startIso;
+        const isEnd = day.toISOString().slice(0,10) === endIso;
+        const inRange = (day >= start && day <= end);
+        const bg = isStart ? '#ecfdf5' : (isEnd ? '#eef2ff' : (inRange ? '#f7f7fb' : '#ffffff'));
+        const color = isStart ? '#065f46' : (isEnd ? '#553c9a' : '#374151');
+        const border = isStart || isEnd ? '2px solid rgba(0,0,0,0.04)' : '1px solid rgba(0,0,0,0.03)';
+        html += `<div style="height:26px; border-radius:6px; background:${bg}; display:flex; align-items:center; justify-content:center; border:${border}; color:${color};">${day.getDate()}</div>`;
+      })
+    });
+    html += `</div></div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+/* render profile cover page (includes notes) */
+function renderProfileCoverPage(){
+  const d = window.state;
+  const date = new Date().toLocaleDateString();
+  const targetCal = d.targetCalories ? d.targetCalories.toLocaleString() + ' kcal' : 'N/A';
+  const macro = `${d.macroProtein}% / ${d.macroCarb}% / ${d.macroFat}%`;
+  const startWeight = d.startingWeight || '';
+  const currentWeight = d.weight || '';
+  const weightSVG = makeWeightSVG(startWeight, currentWeight, 320, 120).replace(/\n/g,'');
+  const svgDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(weightSVG)}`;
+  const startIso = d.startDate || '';
+  const endIso = startIso ? addDaysISO(startIso, 29) : '';
+  const miniCalendarHTML = makeMiniCalendarHTML(startIso, endIso);
+  const profileImg = d.profileImageBase64 || LOGO_URL;
+  const notesHtml = escapeHtml(d.notes || '');
+  return `
+    <div style="font-family:Inter, Arial; width:754px; min-height:1080px; padding:26px; box-sizing:border-box; border-radius:12px; background:#f9fafb; position:relative;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:22px;">
+        <div style="display:flex; gap:16px; align-items:center;">
+          <div style="width:96px;height:96px;border-radius:9999px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#fff;box-shadow:0 6px 18px rgba(2,6,23,0.06);">
+            <img src="${profileImg}" style="width:100%; height:100%; object-fit:cover;" onerror="this.style.display='none'"/>
+          </div>
+          <div>
+            <h1 style="margin:0; font-size:26px; color:#0f172a;">${escapeHtml(d.clientName || 'Client')}</h1>
+            <p style="margin:6px 0 0 0; color:#6b7280;">Personalized 30-Day Program — ${escapeHtml(d.clientGoal || 'Goal Not Set')}</p>
+            <p style="margin:4px 0 0 0; color:#6b7280; font-size:12px;">Generated: ${date}</p>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:12px; color:#9ca3af;">Program Length</div>
+          <div style="font-weight:700; font-size:18px; color:#111827;">30 days</div>
+          <div style="height:8px"></div>
+          <div style="font-size:12px; color:#9ca3af;">Target Calories</div>
+          <div style="font-weight:700; font-size:18px; color:#059669;">${targetCal}</div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 320px; gap:18px; margin-bottom:18px;">
+        <div style="background:#fff; padding:14px; border-radius:10px; border:1px solid #eef2f7;">
+          <h3 style="margin:0 0 10px 0; color:#111827;">Client Details</h3>
+          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <div style="min-width:160px;">
+              <div class="small-muted">Age</div>
+              <div style="font-weight:600;">${escapeHtml(d.age || 'N/A')}</div>
+            </div>
+            <div style="min-width:160px;">
+              <div class="small-muted">Gender</div>
+              <div style="font-weight:600;">${escapeHtml(d.gender || 'N/A')}</div>
+            </div>
+            <div style="min-width:160px;">
+              <div class="small-muted">Height</div>
+              <div style="font-weight:600;">${escapeHtml(d.height || 'N/A')} cm</div>
+            </div>
+            <div style="min-width:160px;">
+              <div class="small-muted">Current Weight</div>
+              <div style="font-weight:600;">${escapeHtml(currentWeight || 'N/A')} kg</div>
+            </div>
+            <div style="min-width:160px;">
+              <div class="small-muted">Starting Weight</div>
+              <div style="font-weight:600;">${escapeHtml(startWeight || 'N/A')} kg</div>
+            </div>
+            <div style="min-width:160px;">
+              <div class="small-muted">Activity Level</div>
+              <div style="font-weight:600;">${escapeHtml(d.activityLevel || 'N/A')}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:#fff; padding:12px; border-radius:10px; border:1px solid #eef2f7;">
+          <h3 style="margin:0 0 8px 0; color:#111827;">Weight Progress</h3>
+          <div style="display:flex; gap:12px; align-items:center;">
+            <div style="flex:1;">
+              <img src="${svgDataUri}" style="width:100%; border-radius:8px; background:#fff;" />
+            </div>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+            <div style="background:#f3f4f6; padding:8px 10px; border-radius:8px;">
+              <div class="small-muted">Start</div>
+              <div style="font-weight:700;">${escapeHtml(startWeight || '-')}</div>
+            </div>
+            <div style="background:#ecfdf5; padding:8px 10px; border-radius:8px;">
+              <div class="small-muted">Current</div>
+              <div style="font-weight:700; color:#065f46;">${escapeHtml(currentWeight || '-')}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr; gap:18px; margin-bottom:16px;">
+        <div style="background:#fff; padding:12px; border-radius:10px; border:1px solid #eef2f7;">
+          <h3 style="margin:0 0 8px 0; color:#111827;">Program Calendar</h3>
+          <div style="margin-top:8px;">${makeMiniCalendarHTML(startIso, endIso)}</div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:16px;">
+        <div style="background:#fff; padding:12px; border-radius:10px; border:1px solid #eef2f7;">
+          <h3 style="margin:0 0 8px 0; color:#111827;">Program Summary</h3>
+          <div style="font-size:13px; color:#374151;">
+            <div><strong>Goal:</strong> ${escapeHtml(d.clientGoal || 'N/A')}</div>
+            <div><strong>TDEE:</strong> ${d.tdee ? d.tdee.toLocaleString() + ' kcal' : 'N/A'}</div>
+            <div><strong>Target Calories:</strong> ${targetCal}</div>
+            <div><strong>Macro Split:</strong> ${macro}</div>
+          </div>
+        </div>
+
+        <div style="background:#fff; padding:12px; border-radius:10px; border:1px solid #eef2f7;">
+          <h3 style="margin:0 0 8px 0; color:#111827;">Notes</h3>
+          <div style="font-size:13px; color:#374151;">${notesHtml || '<span style="color:#9ca3af">No notes provided.</span>'}</div>
+        </div>
+      </div>
+
+      <div style="position:absolute; bottom:18px; left:26px; right:26px; text-align:center; color:#9ca3af; font-size:11px;">Document generated by HomeWorkoutFactory</div>
+    </div>
+  `;
+}
+
+/* Day page: DAY X uppercase, no date or client name */
+function renderDayForPDF(dayData, index){
+  const meals = (dayData.meals || []);
+  const workouts = (dayData.workouts || []);
+  const dayNum = index + 1;
+  const mealsHtml = Array.from({length:MAX_MEALS_PER_DAY}).map((_,i)=>{
+    const m = meals[i];
+    if(!m){
+      return `
+        <div style="display:flex; gap:12px; align-items:center; padding:8px; border-radius:8px; background:#ffffff; border:1px dashed #e6edf3;">
+          <div style="width:84px; height:64px; border-radius:8px; background:#f3f4f6; display:flex; align-items:center; justify-content:center; color:#9ca3af; font-size:12px;">No Meal</div>
+          <div>
+            <div style="font-weight:600; color:#374151;">-</div>
+            <div style="color:#9ca3af; font-size:12px;">No recipe</div>
+          </div>
+        </div>
+      `;
+    }
+    const thumb = m.thumbnail || `https://placehold.co/84x64?text=${encodeURIComponent(m.name)}`;
+    return `
+      <div style="display:flex; gap:12px; align-items:center; padding:8px; border-radius:8px; background:#ffffff; border:1px solid #eef2f7;">
+        <img src="${thumb}" style="width:84px; height:64px; object-fit:cover; border-radius:8px;" onerror="this.style.display='none'"/>
+        <div>
+          <div style="font-weight:700; color:#111827;">${escapeHtml(m.name)}</div>
+          <div style="color:#6b7280; font-size:12px;">${escapeHtml(m.category || '')}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const session = workouts[0];
+  let workoutHtml = '';
+  if(!session){
+    workoutHtml = `<div style="padding:14px; border-radius:8px; background:#fff; border:1px dashed #e6edf3; color:#9ca3af;">No workout scheduled for this day.</div>`;
+  } else {
+    const docImg = session.documentImage || (session.ids && session.ids.length ? ( (window.state.workouts.find(w=>w.id===session.ids[0])||{}).documentImage ) : '') || `https://placehold.co/320x200?text=${encodeURIComponent(session.name)}`;
+    workoutHtml = `
+      <div style="display:flex; gap:16px; align-items:flex-start;">
+        <div style="flex:1;">
+          <div style="font-weight:700; font-size:16px; color:#111827; margin-bottom:8px;">${escapeHtml(session.name)}</div>
+          <div style="color:#6b7280; font-size:12px; margin-bottom:8px;"><strong>Duration:</strong> ${escapeHtml(session.duration || '')}</div>
+          <div style="color:#374151; font-size:12px; margin-bottom:8px;"><strong>Description:</strong><br>${escapeHtml(session.description || '')}</div>
+          <div style="color:#374151; font-size:12px; margin-bottom:8px;"><strong>Structure:</strong><br>${session.structure || ''}</div>
+          <div style="color:#374151; font-size:12px; margin-bottom:8px;"><strong>Tips:</strong><br>${session.tips || ''}</div>
+          <div style="color:#374151; font-size:12px;"><strong>Exercises:</strong> ${escapeHtml(session.exercises || '')}</div>
+        </div>
+        <div style="width:320px; border-radius:8px; overflow:hidden; border:1px solid #eef2f7;">
+          <img src="${docImg}" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'"/>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="font-family:Inter, Arial; width:754px; min-height:1080px; box-sizing:border-box; padding:26px; border-radius:12px; background:#fafafa; position:relative;">
+      <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px;">
+        <div>
+          <h1 style="font-size:20px; margin:0; color:#111827; letter-spacing:0.8px;">DAY ${dayNum}</h1>
+          <div style="color:#6b7280; font-size:13px;">Program Day ${dayNum} of 30</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:12px; color:#9ca3af;">&nbsp;</div>
+        </div>
+      </header>
+
+      <section style="margin-bottom:16px;">
+        <h2 style="color:#059669; font-size:14pt; margin-bottom:12px;">Meal Plan (${(meals.length)}/${MAX_MEALS_PER_DAY} Meals)</h2>
+        <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;">${mealsHtml}</div>
+      </section>
+
+      <hr style="border:none; height:1px; background:#e6edf3; margin:18px 0;"/>
+
+      <section>
+        <h2 style="color:#7c3aed; font-size:14pt; margin-bottom:12px;">Workout</h2>
+        ${workoutHtml}
+      </section>
+
+      <footer style="position:absolute; bottom:18px; left:26px; right:26px; text-align:center; color:#9ca3af; font-size:10px;">Page ${(index+2)} of ${window.state.monthlySchedule.length+1}</footer>
+    </div>
+  `;
+}
+
+/* front cover (if uploaded) */
+function renderFrontCoverPage(){
+  const img = window.state.frontCoverBase64;
+  if(!img) return '';
+  return `
+    <div style="font-family:Inter, Arial; width:754px; min-height:1080px; box-sizing:border-box; padding:12px; border-radius:12px; background:#fff; display:flex; align-items:center; justify-content:center;">
+      <div style="width:726px; height:1056px; border:8px solid #f3f4f6; overflow:hidden; border-radius:8px; display:flex; align-items:center; justify-content:center;">
+        <img src="${img}" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'"/>
+      </div>
+    </div>
+  `;
+}
+
+/* show/hide loader with progress */
+function showLoader(){
+  getEl('pdf-loader').style.display = 'flex';
+  updateLoaderProgress(0, 'Starting...');
+}
+function updateLoaderProgress(pct, text){
+  const inner = getEl('pdf-progress');
+  const txt = getEl('pdf-progress-text');
+  inner.style.width = `${pct}%`;
+  txt.textContent = text || '';
+}
+function hideLoader(){ 
+  getEl('pdf-loader').style.display = 'none';
+  updateLoaderProgress(0, '');
+}
+
+/* main generation flow with progress updates per page */
+async function generatePDF(){
+  if(!window.jspdf){ showFeedback('PDF libs not loaded', true); return; }
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p','mm','a4');
+  const mmWidth = 210;
+  const printContainer = document.createElement('div');
+  printContainer.style.position = 'absolute';
+  printContainer.style.left = '-9999px';
+  document.body.appendChild(printContainer);
+
+  showLoader();
+  try {
+    const pagesToRender = [];
+    const frontHtml = renderFrontCoverPage();
+    if(frontHtml) pagesToRender.push({ html: frontHtml, label: 'Cover' });
+    pagesToRender.push({ html: renderProfileCoverPage(), label: 'Profile' });
+    window.state.monthlySchedule.forEach((d,i) => pagesToRender.push({ html: renderDayForPDF(d,i), label: `Day ${i+1}` }));
+
+    const total = pagesToRender.length;
+    for(let i=0;i<total;i++){
+      const item = pagesToRender[i];
+      updateLoaderProgress(Math.round((i/total)*100), `Rendering: ${item.label} (${i+1}/${total})`);
+      printContainer.innerHTML = item.html;
+      const el = printContainer.firstElementChild;
+      // use scale 2 for better resolution
+      const canvas = await html2canvas(el, { scale: 2, width: el.offsetWidth, useCORS: true });
+      const img = canvas.toDataURL('image/png');
+      const h = canvas.height * mmWidth / canvas.width;
+      if(i === 0){
+        pdf.addImage(img, 'PNG', 0, 0, mmWidth, h);
+      } else {
+        pdf.addPage();
+        pdf.addImage(img, 'PNG', 0, 0, mmWidth, h);
+      }
+      updateLoaderProgress(Math.round(((i+1)/total)*100), `Rendered ${item.label} (${i+1}/${total})`);
+      // slight delay to ensure UI updates on slower devices
+      await new Promise(res => setTimeout(res, 200));
+    }
+
+    const fname = `program_${(window.state.clientName||'client').replace(/\s+/g,'_').toLowerCase()}_${new Date().toISOString().slice(0,10)}.pdf`;
+    hideLoader();
+    pdf.save(fname);
+    showFeedback('PDF generated');
+  } catch(e){
+    console.error(e);
+    hideLoader();
+    showFeedback('PDF generation failed', true);
+  } finally {
+    document.body.removeChild(printContainer);
+  }
+}
+
+/* image upload handlers -> base64 */
+function handleProfileImage(e){
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const data = ev.target.result;
+    window.state.profileImageBase64 = data;
+    getEl('profile-preview').src = data;
+    getEl('profile-preview').style.display = 'block';
+    saveToLocal();
+  };
+  reader.readAsDataURL(f);
+}
+function handleFrontCoverImage(e){
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const data = ev.target.result;
+    window.state.frontCoverBase64 = data;
+    getEl('front-cover-preview').src = data;
+    getEl('front-cover-preview').style.display = 'block';
+    saveToLocal();
+  };
+  reader.readAsDataURL(f);
+}
+
+/* helpers */
+function escapeHtml(s){ if(typeof s !== 'string') return s || ''; return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function truncate(s,n){ if(!s) return ''; return s.length>n ? s.slice(0,n-1)+'…' : s; }
+
+/* init render */
+renderRecipeLibrary();
+renderWorkoutLibrary();
+renderScheduleGrid();
+populateClientUI();
+saveToLocal();
+
+</script>
+</body>
+</html>
